@@ -1,7 +1,9 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 import torch.distributed as dist
 from transformers import Qwen3Config
+from typing import Optional, Tuple, Union
 
 from nanovllm.layers.activation import SiluAndMul
 from nanovllm.layers.attention import Attention
@@ -204,14 +206,161 @@ class Qwen3ForCausalLM(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
-        positions: torch.Tensor,
-    ) -> torch.Tensor:
+        positions: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        use_cache: bool = False,
+        return_dict: bool = True,
+    ) -> Union[torch.Tensor, dict]:
+        """
+        Forward pass for training and inference.
+
+        Args:
+            input_ids: Input token IDs [batch_size, seq_len]
+            positions: Position IDs [batch_size, seq_len] (optional for training)
+            attention_mask: Attention mask [batch_size, seq_len] (optional)
+            labels: Labels for loss computation [batch_size, seq_len] (optional)
+            use_cache: Whether to use KV cache (for inference)
+            return_dict: Whether to return a dictionary
+
+        Returns:
+            If labels is provided: loss tensor or dict with loss and logits
+            Otherwise: logits tensor or dict with logits
+        """
+        # Generate positions if not provided (for training)
+        if positions is None:
+            batch_size, seq_len = input_ids.shape
+            positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(batch_size, -1)
+
+        # Forward through model
         hidden_states = self.model(input_ids, positions)
-        return hidden_states
+
+        # Compute logits
+        logits = self.compute_logits(hidden_states)
+
+        loss = None
+        if labels is not None:
+            # Compute cross-entropy loss for causal language modeling
+            loss = self.compute_loss(logits, labels)
+
+        if return_dict:
+            return {
+                "loss": loss,
+                "logits": logits,
+                "hidden_states": hidden_states,
+            }
+        else:
+            if loss is not None:
+                return loss
+            return logits
 
     def compute_logits(
         self,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
+        """Compute logits from hidden states."""
         logits = self.lm_head(hidden_states)
         return logits
+
+    def compute_loss(
+        self,
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute cross-entropy loss for causal language modeling.
+
+        Args:
+            logits: Model logits [batch_size, seq_len, vocab_size]
+            labels: Target labels [batch_size, seq_len]
+
+        Returns:
+            Cross-entropy loss tensor
+        """
+        # Shift logits and labels for causal LM
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+
+        # Flatten for loss computation
+        shift_logits = shift_logits.view(-1, shift_logits.size(-1))
+        shift_labels = shift_labels.view(-1)
+
+        # Compute cross-entropy loss
+        loss = F.cross_entropy(
+            shift_logits,
+            shift_labels,
+            ignore_index=-100,
+            reduction="mean"
+        )
+
+        return loss
+
+    def gradient_checkpointing_enable(self):
+        """Enable gradient checkpointing for memory efficiency."""
+        def create_custom_forward(module):
+            def custom_forward(*inputs):
+                return module(*inputs)
+            return custom_forward
+
+        for layer in self.model.layers:
+            layer.forward = torch.utils.checkpoint.checkpoint(
+                create_custom_forward(layer.__class__.forward),
+                layer,
+                use_reentrant=False
+            )
+
+    def gradient_checkpointing_disable(self):
+        """Disable gradient checkpointing."""
+        for layer in self.model.layers:
+            # Reset to original forward method
+            layer.forward = layer.__class__.forward.__get__(layer, layer.__class__)
+
+    def get_input_embeddings(self):
+        """Get input embeddings layer."""
+        return self.model.embed_tokens
+
+    def set_input_embeddings(self, value):
+        """Set input embeddings layer."""
+        self.model.embed_tokens = value
+
+    def get_output_embeddings(self):
+        """Get output embeddings layer."""
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        """Set output embeddings layer."""
+        self.lm_head = new_embeddings
+
+    def tie_weights(self):
+        """Tie input and output embeddings if configured."""
+        if hasattr(self, 'config') and getattr(self.config, 'tie_word_embeddings', False):
+            self.lm_head.weight = self.model.embed_tokens.weight
+
+    def prepare_inputs_for_generation(
+        self,
+        input_ids: torch.Tensor,
+        past_key_values: Optional[tuple] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        **kwargs
+    ) -> dict:
+        """Prepare inputs for generation (inference)."""
+        # Generate position IDs
+        if past_key_values is not None:
+            # Use cache length for position
+            position_ids = torch.arange(
+                past_key_values[0][0].shape[2],
+                input_ids.shape[1] + past_key_values[0][0].shape[2],
+                device=input_ids.device
+            ).unsqueeze(0)
+        else:
+            position_ids = torch.arange(
+                input_ids.shape[1],
+                device=input_ids.device
+            ).unsqueeze(0).expand(input_ids.shape[0], -1)
+
+        return {
+            "input_ids": input_ids,
+            "positions": position_ids,
+            "attention_mask": attention_mask,
+            "use_cache": True,
+        }

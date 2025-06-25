@@ -1,0 +1,69 @@
+{
+  "_comment": "Configuration for training a language model completely from scratch",
+  
+  "model_name_or_path": null,
+  "dataset_path": "./my_documents",
+  "output_dir": "./from_scratch_model",
+  
+  "train_from_scratch": true,
+  "model_size": "small",
+  "vocab_size": null,
+  
+  "learning_rate": 1e-3,
+  "weight_decay": 0.1,
+  "beta1": 0.9,
+  "beta2": 0.95,
+  "eps": 1e-8,
+  
+  "per_device_train_batch_size": 4,
+  "per_device_eval_batch_size": 4,
+  "gradient_accumulation_steps": 4,
+  "max_seq_length": 1024,
+  
+  "num_train_epochs": 10,
+  "max_train_steps": null,
+  "warmup_steps": 1000,
+  "warmup_ratio": 0.0,
+  "lr_scheduler_type": "cosine",
+  
+  "mixed_precision": "bf16",
+  "gradient_clipping": 1.0,
+  "gradient_checkpointing": true,
+  
+  "tensor_parallel_size": 1,
+  "data_parallel_size": 1,
+  
+  "eval_steps": 500,
+  "save_steps": 1000,
+  "logging_steps": 50,
+  "eval_strategy": "steps",
+  "save_strategy": "steps",
+  
+  "max_memory_per_gpu": null,
+  "cpu_offload": false,
+  
+  "resume_from_checkpoint": null,
+  "save_total_limit": 3,
+  
+  "preprocessing_num_workers": 4,
+  "dataloader_num_workers": 0,
+  "dataloader_pin_memory": true,
+  
+  "seed": 42,
+  
+  "ignore_data_skip": false,
+  "remove_unused_columns": true,
+  
+  "_training_notes": {
+    "description": "From-scratch training configuration",
+    "model_sizes": {
+      "tiny": "256 hidden, 4 layers, ~1M parameters",
+      "small": "512 hidden, 8 layers, ~10M parameters", 
+      "medium": "1024 hidden, 16 layers, ~100M parameters",
+      "large": "2048 hidden, 24 layers, ~500M parameters"
+    },
+    "vocab_size_notes": "Auto-determined based on document collection size if null",
+    "learning_rate_notes": "Higher LR (1e-3) recommended for from-scratch training",
+    "epochs_notes": "More epochs (10+) needed for from-scratch vs fine-tuning (1-3)"
+  }
+}

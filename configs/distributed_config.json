@@ -1,0 +1,50 @@
+{
+  "model_name_or_path": "Qwen/Qwen3-0.6B",
+  "dataset_path": "data/train.jsonl",
+  "output_dir": "./checkpoints_distributed",
+  
+  "learning_rate": 1e-4,
+  "weight_decay": 0.01,
+  "beta1": 0.9,
+  "beta2": 0.95,
+  "eps": 1e-8,
+  
+  "per_device_train_batch_size": 1,
+  "per_device_eval_batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "max_seq_length": 4096,
+  
+  "num_train_epochs": 1,
+  "max_train_steps": 10000,
+  "warmup_steps": 500,
+  "warmup_ratio": 0.0,
+  "lr_scheduler_type": "cosine",
+  
+  "mixed_precision": "bf16",
+  "gradient_clipping": 1.0,
+  "gradient_checkpointing": true,
+  
+  "tensor_parallel_size": 2,
+  "data_parallel_size": 2,
+  
+  "eval_steps": 250,
+  "save_steps": 500,
+  "logging_steps": 5,
+  "eval_strategy": "steps",
+  "save_strategy": "steps",
+  
+  "max_memory_per_gpu": "20GB",
+  "cpu_offload": false,
+  
+  "resume_from_checkpoint": null,
+  "save_total_limit": 5,
+  
+  "preprocessing_num_workers": 8,
+  "dataloader_num_workers": 2,
+  "dataloader_pin_memory": true,
+  
+  "seed": 42,
+  
+  "ignore_data_skip": false,
+  "remove_unused_columns": true
+}
